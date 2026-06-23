@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+main.dist
+main.build
+build/
+*.spec
+
+#
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+*.iml
+
+# system
+.DS_Store
+Thumbs.db
+
+# data
+notes/
+images/
+attachments/
+trash_notes/
+staging/
+list_order.json
+trash.json
+
+# bak
+*.zip
+*.bak
+
+#
+tools/
+
+#
+upx-doc.html
+upx-doc.txt
+upx.1
+upx.exe

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>便签测试 - 绝杀底盘</title>
+    <script src="js/marked.min.js"></script>
+    <script src="js/fuse.min.js"></script>
+    <style>
+        /* 强制侧边栏撑满屏幕，解锁滚动条 */
+        * { box-sizing: border-box; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+        #app { display: flex; height: 100vh; }
+        .sidebar { width: 260px; background: #f7f8fa; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; height: 100vh; }
+        .sidebar-inner { display: flex; flex-direction: column; flex: 1; height: 100%; overflow: hidden; }
+        .sidebar-actions { padding: 12px; flex-shrink: 0; }
+        .search-input { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; margin-bottom: 10px; }
+        #addNoteBtn { padding: 8px 12px; color: #2563eb; cursor: pointer; font-weight: 500; border-radius: 4px; }
+        #addNoteBtn:hover { background: #e0e7ff; }
+
+        /* 让侧边栏笔记区域完美撑满，同时挤压出滚动条 */
+        #secondary-notes {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* 置顶区域：自适应内容高度，允许内部滚动 */
+        #pinned-list-wrap {
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        #pinnedList {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 0 12px 12px 12px;
+        }
+
+        /* 普通笔记区域：自动占据剩余全部高度 */
+        #normal-list-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        #noteList {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 0 12px 12px 12px;
+        }
+        .pinned-header { font-size: 12px; color: #6b7280; padding: 8px 0; display: none; border-bottom: 1px solid #e5e7eb; margin-bottom: 8px; }
+        .pinned-header.show { display: block; }
+        .sidebar-item { padding: 8px 12px; cursor: pointer; border-radius: 4px; margin-bottom: 4px; }
+        .sidebar-item:hover { background: #f3f4f6; }
+        .sidebar-item.active { background: #e0e7ff; color: #2563eb; font-weight: 500; }
+
+        .main-content-wrapper { flex: 1; background: #fff; display: flex; flex-direction: column; padding: 20px; overflow: hidden; }
+        #noteTitleInput { width: 100%; font-size: 24px; border: none; outline: none; font-weight: bold; margin-bottom: 20px; }
+        #editorInput { flex: 1; border: 1px solid #e5e7eb; resize: none; padding: 10px; outline: none; font-family: inherit; line-height: 1.6; }
+        #previewContent { margin-top: 20px; overflow-y: auto; max-height: 40%; }
+        .preview-content img { max-width: 100%; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-actions">
+                    <input type="text" id="searchInput" class="search-input" placeholder="搜索笔记...">
+                    <div id="addNoteBtn">+ 新建笔记</div>
+                </div>
+                <div id="secondary-notes">
+                    <div id="pinned-list-wrap" style="display: none;">
+                        <div class="pinned-header show">📌 置顶</div>
+                        <div id="pinnedList"></div>
+                    </div>
+                    <div id="normal-list-wrap" style="margin-top: 12px; border-top: 1px solid #e5e7eb; padding-top: 8px;">
+                        <div id="noteList"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="main-content-wrapper">
+            <input type="text" id="noteTitleInput" placeholder="在此输入笔记标题...">
+            <textarea id="editorInput" placeholder="Ctrl+B 加粗, Ctrl+I 斜体, Ctrl+K 链接, 支持拖入或粘贴(Ctrl+V)图片..."></textarea>
+            <div id="previewContent"></div>
+        </div>
+    </div>
+
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        // 极简安全绑定函数
+        function safeBind(id, callback) {
+            const el = document.getElementById(id);
+            if (el) callback(el);
+        }
+
+        let currentNoteId = null;
+        let allNotesData = [];
+
+        // 渲染侧边栏
+        function renderSidebar(notesJson) {
+            allNotesData = JSON.parse(notesJson);
+            const pinnedList = document.getElementById('pinnedList');
+            const normalList = document.getElementById('noteList');
+            pinnedList.innerHTML = '';
+            normalList.innerHTML = '';
+
+            const pinnedNotes = allNotesData.filter(n => n.pinned === true);
+            const unpinnedNotes = allNotesData.filter(n => !n.pinned);
+
+            document.getElementById('pinned-list-wrap').style.display = pinnedNotes.length > 0 ? 'block' : 'none';
+            pinnedNotes.forEach(note => {
+                const div = document.createElement('div');
+                div.className = 'sidebar-item';
+                div.innerText = note.title || '无标题笔记';
+                div.dataset.id = note.id;
+                if (note.id === currentNoteId) div.classList.add('active');
+                div.addEventListener('click', function() {
+                    document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+                    this.classList.add('active');
+                    currentNoteId = this.dataset.id;
+                    if(window.backend) window.backend.get_note_content(this.dataset.id);
+                });
+                pinnedList.appendChild(div);
+            });
+
+            unpinnedNotes.forEach(note => {
+                const div = document.createElement('div');
+                div.className = 'sidebar-item';
+                div.innerText = note.title || '无标题笔记';
+                div.dataset.id = note.id;
+                if (note.id === currentNoteId) div.classList.add('active');
+                div.addEventListener('click', function() {
+                    document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+                    this.classList.add('active');
+                    currentNoteId = this.dataset.id;
+                    if(window.backend) window.backend.get_note_content(this.dataset.id);
+                });
+                normalList.appendChild(div);
+            });
+        }
+
+        // 加载笔记内容
+        function loadNoteContent(title, content) {
+            document.getElementById('noteTitleInput').value = title || '';
+            document.getElementById('editorInput').value = content || '';
+            const preview = document.getElementById('previewContent');
+            try {
+                preview.innerHTML = marked.parse(content || '');
+            } catch (e) {
+                preview.innerText = content;
+            }
+        }
+
+        // 核心连接通道
+        document.addEventListener("DOMContentLoaded", function() {
+            new QWebChannel(qt.webChannelTransport, function(channel) {
+                window.backend = channel.objects.backend;
+                if (!window.backend) {
+                    console.error("❌ 后端连接失败！");
+                    return;
+                }
+
+                // 绑定数据信号
+                window.backend.update_sidebar_signal.connect(renderSidebar);
+                window.backend.load_note_signal.connect(loadNoteContent);
+                window.backend.get_all_notes(); // 拉取笔记列表
+
+                // 新建笔记按钮
+                safeBind('addNoteBtn', (el) => {
+                    el.onclick = () => {
+                        const id = Date.now().toString();
+                        currentNoteId = id;
+                        document.getElementById('noteTitleInput').value = '';
+                        document.getElementById('editorInput').value = '';
+                        document.getElementById('previewContent').innerHTML = '';
+                        document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
+                        if(window.backend) window.backend.save_note(id, '新建笔记', '');
+                    };
+                });
+
+                // 自动保存
+                let saveTimer;
+                const editor = document.getElementById('editorInput');
+                const titleInput = document.getElementById('noteTitleInput');
+                function triggerSave() {
+                    clearTimeout(saveTimer);
+                    saveTimer = setTimeout(() => {
+                        if (currentNoteId && window.backend) {
+                            const title = titleInput.value || "无标题笔记";
+                            const content = editor.value;
+                            window.backend.save_note(currentNoteId, title, content);
+                        }
+                    }, 1000);
+                }
+                editor.addEventListener('input', triggerSave);
+                titleInput.addEventListener('input', triggerSave);
+            });
+        });
+    </script>
+</body>
+</html>

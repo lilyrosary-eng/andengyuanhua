@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>浮窗笔记</title>
+    <script src="js/marked.min.js"></script>
+    <style>
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #ffffff; overflow: hidden; font-family: -apple-system, sans-serif; }
+        #app-float { display: flex; width: 100%; height: 100%; }
+        .main-content-wrapper { flex: 1; display: flex; overflow: hidden; background: #ffffff; }
+        .main-content { display: flex; flex: 1; overflow: hidden; }
+        .editor-panel { flex: 1; display: flex; flex-direction: column; background: #ffffff; border-right: 1px solid #eee; padding-top: 20px; }
+        #noteTitleInput { font-size: 24px; font-weight: 600; border: none; outline: none; width: 100%; padding: 0 20px 12px 20px; color: #1f1f1f; font-family: inherit; background: transparent; }
+        #editorInput { flex: 1; width: 100%; border: none; resize: none; outline: none; padding: 0 20px 20px 20px; font-size: 16px; line-height: 1.8; color: #1f1f1f; font-family: inherit; background: transparent; }
+        .preview-panel { flex: 1; display: flex; flex-direction: column; align-items: center; background: #f8f9fa; overflow-y: auto; padding-top: 20px; }
+        .preview-content { width: 100%; max-width: 820px; padding: 0 20px 20px 20px; color: #1f1f1f; }
+        .preview-content img { display: block; width: 100%; max-width: 820px; height: auto; margin: 20px auto; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); cursor: pointer; }
+        .preview-content table {
+            border-collapse: collapse;
+            width: 100%;
+            max-width: 100%;
+            margin: 16px 0;
+            font-size: 14px;
+            display: table;           /* 改为 table，不再 block */
+        }
+        .preview-content th,
+        .preview-content td {
+            border: 1px solid var(--border-divider);
+            padding: 8px 12px;
+            text-align: left;
+            word-break: break-word;
+        }
+        .preview-content th {
+            background: var(--hover-bg);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        .preview-content tr:nth-child(even) {
+            background: rgba(0,0,0,0.02);
+        }
+        [data-theme="dark"] .preview-content tr:nth-child(even) {
+            background: rgba(255,255,255,0.02);
+        }
+
+        /* 移动端横向滚动容器 */
+        .preview-content .table-wrapper {
+            overflow-x: auto;
+            margin: 16px 0;
+            border-radius: 8px;
+            border: 1px solid var(--border-divider);
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+
+        .top-actions { position: absolute; top: 6px; right: 16px; z-index: 10; display: flex; gap: 8px; }
+        .top-actions button {
+            padding: 4px 12px; border: none; border-radius: 6px;
+            background: rgba(0,0,0,0.05); font-size: 13px; color: #333; cursor: pointer; transition: 0.2s;
+        }
+        .top-actions button:hover { background: rgba(0,0,0,0.1); }
+        ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+        ::-webkit-scrollbar-thumb:active { background: #6b7280; }
+        #image-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.75); display: none;
+            justify-content: center; align-items: center; z-index: 99997;
+        }
+        #image-overlay img {
+            max-width: 90%; max-height: 90%; object-fit: contain;
+            border-radius: 8px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body>
+    <div id="app-float">
+        <div class="main-content-wrapper">
+            <div class="top-actions">
+                <button id="toggleFloatTopBtn">📌 置顶此窗口</button>
+            </div>
+            <div class="main-content">
+                <div class="editor-panel">
+                    <input type="text" id="noteTitleInput" placeholder="在此输入笔记标题...">
+                    <textarea id="editorInput" placeholder="在此输入 Markdown 正文..."></textarea>
+                </div>
+                <div class="preview-panel">
+                    <div class="preview-content" id="previewContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="image-overlay" onclick="this.style.display='none'"><img id="enlarged-image" src="" alt="放大的图片"></div>
+
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        let currentNoteId = null;
+        let initAttempts = 0;
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialFloatingId = urlParams.get('id');
+
+        function loadNoteContent(title, content) {
+            document.getElementById('noteTitleInput').value = title || "";
+            document.getElementById('editorInput').value = content || "";
+            const preview = document.getElementById('previewContent');
+            let previewContent = content || "";
+            let lines = previewContent.split('\n');
+            if (lines.length > 0 && /^[#＃]\s/.test(lines[0].trim())) {
+                lines.shift();
+                previewContent = lines.join('\n');
+            }
+            requestAnimationFrame(() => {
+                if (!previewContent) preview.innerHTML = "<span style='color:#555;'>空笔记</span>";
+                else {
+                    try { preview.innerHTML = marked.parse(previewContent); } catch (error) { preview.innerText = previewContent; }
+                }
+            });
+        }
+
+        function tryInitFloating() {
+            if (typeof qt !== 'undefined' && qt.webChannelTransport) {
+                new QWebChannel(qt.webChannelTransport, function(channel) {
+                    window.backend = channel.objects.backend;
+                    window.floatActions = channel.objects.floatActions;
+
+                    // 合并信号，避免双重刷新
+                    // 只监听一次，防止主窗口内容同步过来
+                    const loadHandler = function(title, content) {
+                        if (currentNoteId === initialFloatingId || currentNoteId === null) {
+                            loadNoteContent(title, content);
+                            // 加载完成后断开信号，不再接收后续更新
+                            window.backend.load_note_signal.disconnect(loadHandler);
+                        }
+                    };
+                    window.backend.load_note_signal.connect(loadHandler);
+
+                    if(initialFloatingId) {
+                        currentNoteId = initialFloatingId;
+                        window.backend.get_note_content(initialFloatingId);
+                    }
+
+                    let isPinned = false;
+                    const topBtn = document.getElementById('toggleFloatTopBtn');
+                    topBtn.addEventListener('click', function() {
+                        if(window.floatActions) {
+                            window.floatActions.toggle_top();
+                            isPinned = !isPinned;
+                            topBtn.textContent = isPinned ? '📌 取消置顶' : '📌 置顶此窗口';
+                        }
+                    });
+
+                    const editor = document.getElementById('editorInput');
+                    let saveTimer;
+                    function triggerSave() {
+                        clearTimeout(saveTimer);
+                        saveTimer = setTimeout(() => {
+                            if (currentNoteId) {
+                                const title = document.getElementById('noteTitleInput').value || "无标题笔记";
+                                const content = editor.value;
+                                window.backend.save_note(currentNoteId, title, content);
+                            }
+                        }, 1000);
+                    }
+                    editor.addEventListener('input', function() {
+                        const content = this.value;
+                        let previewContent = content;
+                        let lines = previewContent.split('\n');
+                        if (lines.length > 0 && /^[#＃]\s/.test(lines[0].trim())) {
+                            lines.shift();
+                            previewContent = lines.join('\n');
+                        }
+                        requestAnimationFrame(() => {
+                            const preview = document.getElementById('previewContent');
+                            if (!previewContent) preview.innerHTML = "<span style='color:#555;'>空笔记</span>";
+                            else {
+                                try { preview.innerHTML = marked.parse(previewContent); } catch (error) { preview.innerText = previewContent; }
+                            }
+                        });
+                        triggerSave();
+                    });
+                    // ===== 浮窗拖拽文件识别 =====
+                    document.addEventListener('dragover', (e) => e.preventDefault());
+                    document.addEventListener('drop', async (e) => {
+                        e.preventDefault();
+                        const files = e.dataTransfer.files;
+                        if (files.length > 0 && window.floatActions) {
+                            const file = files[0];
+                            const reader = new FileReader();
+                            reader.onload = async (event) => {
+                                const base64 = event.target.result;
+                                const insertText = await window.floatActions.save_file(file.name, base64);
+                                if (insertText) {
+                                    const editor = document.getElementById('editorInput');
+                                    if (editor) {
+                                        editor.value += insertText;
+                                        editor.dispatchEvent(new Event('input', { bubbles: true }));
+                                    }
+                                }
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                });
+            } else if (initAttempts < 10) {
+                initAttempts++;
+                setTimeout(tryInitFloating, 200);
+            } else {
+                document.getElementById('previewContent').innerHTML = "<span style='color:red;'>无法加载笔记，请重试。</span>";
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            tryInitFloating();
+
+            // ===== 图片预览交互 =====
+            let clickTimer = null;
+            const previewContainer = document.getElementById('previewContent');
+            previewContainer.addEventListener('click', function(e) {
+                if (e.target && e.target.tagName === 'IMG') {
+                    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return; }
+                    clickTimer = setTimeout(() => {
+                        const overlay = document.getElementById('image-overlay');
+                        const img = document.getElementById('enlarged-image');
+                        if (overlay && img) {
+                            img.src = e.target.src;
+                            overlay.style.display = 'flex';
+                        }
+                        clickTimer = null;
+                    }, 200);
+                }
+            });
+            previewContainer.addEventListener('dblclick', function(e) {
+                if (e.target && e.target.tagName === 'IMG') {
+                    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+                    if (window.floatActions) { window.floatActions.open_image_editor(e.target.src); }
+                }
+            });
+            const overlay = document.getElementById('image-overlay');
+            if (overlay) overlay.addEventListener('click', () => overlay.style.display = 'none');
+        });
+    </script>
+</body>
+</html>

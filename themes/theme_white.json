@@ -1,0 +1,8 @@
+{
+    "name": "极简纯白",
+    "vars": {
+        "--nav-level-1-bg": "rgba(0, 0, 0, 0.05)",
+        "--nav-level-2-bg": "rgba(0, 0, 0, 0.15)",
+        "--theme-color": "#333333"
+    }
+}
