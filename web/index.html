@@ -1220,6 +1220,16 @@
                         document.getElementById('about-section').classList.add('active');
                     };
                 });
+                // ===== 发布页检查更新按钮绑定 =====
+                safeBind('gotoReleasesBtn', (el) => {
+                    el.onclick = () => {
+                        if(window.backend) {
+                            window.backend.open_releases_page();
+                        } else {
+                            showToast("🌐 后端尚未连接，请直接访问 GitHub");
+                        }
+                    };
+                });
                 document.getElementById('closeTrashBtn').onclick = () => document.getElementById('trashModal').classList.remove('show');
 
                 if (window.backend && window.backend.update_trash_signal) {
