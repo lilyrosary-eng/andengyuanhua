@@ -1339,7 +1339,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("岸灯鸢花 - 便签")
         self.resize(960, 680)
-        icon_path = get_abs_path("icon.png")
+        icon_path = get_abs_path("icon.ico")
         if os.path.exists(icon_path):
             app_icon = QIcon(icon_path)
             self.setWindowIcon(app_icon)
@@ -1380,7 +1380,7 @@ class MainWindow(QMainWindow):
 
     def init_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
-        icon_path = get_abs_path("icon.png")  # 沿用已经写好的 get_abs_path
+        icon_path = get_abs_path("icon.ico")  # 沿用已经写好的 get_abs_path
 
         # 加上 try 防御。如果找不到图标，哪怕没有头像，托盘也得保持存在
         try:
