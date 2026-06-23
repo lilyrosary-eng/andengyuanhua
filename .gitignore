@@ -23,11 +23,6 @@ env/
 Thumbs.db
 
 # data
-notes/
-images/
-attachments/
-trash_notes/
-staging/
 list_order.json
 trash.json
 

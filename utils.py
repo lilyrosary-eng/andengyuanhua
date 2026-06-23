@@ -5,16 +5,26 @@ import json
 import urllib.parse
 
 # ===== 应用根目录（可靠） =====
-if getattr(sys, 'frozen', False):
-    # 打包成 exe 时，sys.executable 是 exe 路径
-    APP_ROOT = os.path.dirname(sys.executable)
-else:
-    # 源码运行时，以本文件所在目录为准（即项目根目录）
-    APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-
 def get_abs_path(*parts):
-    """基于 APP_ROOT 获取绝对路径"""
-    return os.path.join(APP_ROOT, *parts)
+    # 如果是打包后的运行环境
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+
+        # 1. 优先在 exe 同级目录查找（例如 notes, images 等数据文件夹）
+        path1 = os.path.join(base, *parts)
+        if os.path.exists(path1):
+            return path1
+
+        # 2. 如果同级没有，去 _internal 子目录里找（解决 web, wkhtml, icon.png 被藏起来的问题）
+        path2 = os.path.join(base, '_internal', *parts)
+        if os.path.exists(path2):
+            return path2
+
+        # 3. 都找不到，返回默认路径，防止程序直接崩溃
+        return path1
+
+    # 开发环境（PyCharm）正常使用当前目录
+    return os.path.join(os.getcwd(), *parts)
 
 def file_url_from_path(file_path):
     """本地路径转为 file:// URL，正确处理 Windows 盘符"""

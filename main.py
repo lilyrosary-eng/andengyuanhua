@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QSystemTrayIcon, QMenu, QDialog, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QVBoxLayout, QHBoxLayout, QPushButton, QColorDialog, QFileDialog,
-    QRubberBand
+    QRubberBand, QStyle
 )
 
 from config import (
@@ -1380,9 +1380,19 @@ class MainWindow(QMainWindow):
 
     def init_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
-        icon_path = get_abs_path("icon.png")
-        if os.path.exists(icon_path):
-            self.tray_icon.setIcon(QIcon(icon_path))
+        icon_path = get_abs_path("icon.png")  # 沿用已经写好的 get_abs_path
+
+        # 加上 try 防御。如果找不到图标，哪怕没有头像，托盘也得保持存在
+        try:
+            if os.path.exists(icon_path):
+                self.tray_icon.setIcon(QIcon(icon_path))
+            else:
+                # 如果没图片，用 PyQt 自带的默认图标保底，不让托盘消失
+                self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+        except Exception as e:
+            print(f"⚠️ 加载托盘图标失败: {e}")
+            self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+
         tray_menu = QMenu()
         show_action = QAction("显示主窗口", self)
         quit_action = QAction("彻底退出", self)
