@@ -773,6 +773,35 @@ class Backend(QObject):
         else:
             self.toast_message_signal.emit("⚠️ 中转站文件夹不存在！")
 
+    @pyqtSlot()
+    def open_releases_page(self):
+        # 使用 QDesktopServices 直接唤起系统默认浏览器打开 GitHub 的 Releases 页面
+        QDesktopServices.openUrl(QUrl("https://github.com/lilyrosary-eng/andengyuanhua/releases"))
+
+    @pyqtSlot()
+    def open_releases_page(self):
+        # 轻量网络请求，查最新版本号（不需要额外引入 requests 库）
+        import urllib.request
+        import json
+        try:
+            req = urllib.request.Request("https://api.github.com/repos/lilyrosary-eng/andengyuanhua/releases/latest")
+            req.add_header('User-Agent', 'Mozilla/5.0')
+            with urllib.request.urlopen(req) as resp:
+                data = json.load(resp)
+                latest_tag = data.get('tag_name', '')
+                # 对比：你当前的版本号是 0.7.5，要改吗？
+                current_ver = "0.7.5"
+                if latest_tag and latest_tag != current_ver:
+                    self.toast_message_signal.emit(f"🎉 发现新版本 {latest_tag}！请前往页面下载。")
+                elif latest_tag:
+                    self.toast_message_signal.emit("✅ 您当前已经是最新版本！")
+        except Exception as e:
+            print(f"检查更新失败: {e}")
+            self.toast_message_signal.emit("🌐 检查更新失败，已打开发布页。")
+
+        # 无论检测成功还是失败，最后都打开发布页
+        QDesktopServices.openUrl(QUrl("https://github.com/lilyrosary-eng/andengyuanhua/releases"))
+
     @pyqtSlot(str, str)
     def rename_note(self, note_id, new_title):
         try:
